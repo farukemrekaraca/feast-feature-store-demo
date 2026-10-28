@@ -1,0 +1,5 @@
+feast[grpcio]==0.67.0
+scikit-learn==1.9.1
+pandas==2.3.3
+numpy>=2.0,<2.4  # numpy 2.4+ triggers deprecation warnings inside pandas 2.3
+joblib==1.6.0

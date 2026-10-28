@@ -1,0 +1,13 @@
+project: food_delivery
+# Registry = the catalog of feature definitions (written by `feast apply`)
+registry: data/registry.db
+# local provider: parquet files as the offline store, SQLite as the online store.
+# In production you would swap these for e.g. BigQuery/Snowflake + Redis/DynamoDB
+# without touching the feature definitions or the model code.
+provider: local
+offline_store:
+  type: file
+online_store:
+  type: sqlite
+  path: data/online_store.db
+entity_key_serialization_version: 3

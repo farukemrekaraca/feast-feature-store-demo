@@ -1,0 +1,70 @@
+
+━━━ 0 · Generate two weeks of delivery data ━━━
+Time range       : 2026-10-14 14:00 -> 2026-10-28 14:00 UTC
+restaurant_stats :   8400 rows (25 restaurants x 336 hours)
+courier_stats    :  13440 rows (40 couriers x 336 hours)
+orders           :   8000 rows, 38% late
+
+━━━ 1 · feast apply: register entities, feature views, feature service ━━━
+No project found in the repository. Using project name food_delivery defined in feature_store.yaml
+Applying changes for project food_delivery
+Created project food_delivery
+Created entity restaurant
+Created entity courier
+Created feature view courier_stats
+Created feature view restaurant_stats
+Created on demand feature view order_eta
+Created feature service late_delivery_v1
+Created sqlite table food_delivery_courier_stats
+Created sqlite table food_delivery_restaurant_stats
+
+━━━ 2 · Training data: naive join vs Feast point-in-time join ━━━
+
+Order #742 from restaurant 1009, placed at Tue 20:49
+Raw kitchen-load snapshots for that restaurant around the order:
+   Tue 19:00  open_orders= 5
+   Tue 20:00  open_orders= 7  <- Feast picks this one (latest row <= order time)
+   Tue 21:00  open_orders= 5  (future!)
+   Tue 22:00  open_orders= 3  (future!)
+
+   Feast  -> open_orders= 7  (as of Tue 20:00)
+   Naive  -> open_orders=11  (as of Wed 13:00, 7 days in the future)
+
+Across all 8000 orders:
+   naive join used data from the future for 99% of rows
+   Feast join matches 'latest value at order time' for 100% of rows -> no leakage
+
+Saved data/training_feast.parquet and data/training_naive.parquet
+
+━━━ 3 · Train the model on both training sets ━━━
+Same algorithm, same labels, same test set. Only the join differs:
+   trained on naive join     -> test AUC 0.816
+   trained on Feast PIT join -> test AUC 0.952
+
+Saved models/late_delivery_v1.joblib (trained on Feast features)
+
+━━━ 4 · Materialize to the online store and score live orders ━━━
+Materializing 2 feature views to 2026-10-28 14:03:22+00:00 into the sqlite online store.
+
+courier_stats from 2026-10-27 14:03:22+00:00 to 2026-10-28 14:03:22+00:00:
+restaurant_stats from 2026-10-28 12:03:22+00:00 to 2026-10-28 14:03:22+00:00:
+
+Incoming orders scored with online features:
+ courier_id  restaurant_id  distance_km  open_orders  avg_prep_min_1h  expected_delivery_min  p_late  lookup_ms
+          7           1005          2.5            6             20.4                   23.6    0.01       11.8
+         12           1013          4.5           11             34.2                   51.7    0.99        5.7
+         30           1021          1.5            8             32.1                   35.0    0.46        4.9
+
+━━━ 5 · Push a fresh value (streaming) and score again ━━━
+Before the rush (restaurant 1025 is the quietest kitchen right now):
+ courier_id  restaurant_id  distance_km  open_orders  avg_prep_min_1h  expected_delivery_min  p_late  lookup_ms
+          7           1025          2.5            0             12.8                   15.9     0.0        7.3
+
+>>> pushed: restaurant 1025 now has 15 open orders, 40 min prep time
+
+After the push (same order, next request):
+ courier_id  restaurant_id  distance_km  open_orders  avg_prep_min_1h  expected_delivery_min  p_late  lookup_ms
+          7           1025          2.5           15             40.0                   43.1    0.98        4.8
+
+Done. Extras: 'cd feature_repo && feast ui' (http://localhost:8888)
+             'cd feature_repo && feast serve' + curl (see README)
